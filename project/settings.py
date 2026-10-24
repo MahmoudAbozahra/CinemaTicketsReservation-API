@@ -10,7 +10,11 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
+import os
+import secrets
 from pathlib import Path
+
+from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -19,13 +23,65 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-1trbpqlfxs4l7kk&jn2pr1k^2ye-fc@y*serf_=udcn00&7qw-'
+def env_flag(name, default):
+    value = os.environ.get(name)
+    if value is None:
+        return default
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+    normalized_value = value.strip().lower()
+    if normalized_value in {"1", "true", "yes", "on"}:
+        return True
+    if normalized_value in {"0", "false", "no", "off"}:
+        return False
+    raise ImproperlyConfigured(f"{name} must be a boolean value.")
 
-ALLOWED_HOSTS = []
+
+# Development remains usable without local secrets. The generated fallback is
+# intentionally ephemeral so it can never become a shared deployment secret.
+DEBUG = env_flag("DJANGO_DEBUG", True)
+
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY")
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = secrets.token_urlsafe(50)
+    else:
+        raise ImproperlyConfigured(
+            "DJANGO_SECRET_KEY must be set when DJANGO_DEBUG is false."
+        )
+elif not DEBUG and (
+    len(SECRET_KEY) < 50
+    or len(set(SECRET_KEY)) < 5
+    or SECRET_KEY.startswith(("django-insecure-", "replace-with-"))
+):
+    raise ImproperlyConfigured(
+        "DJANGO_SECRET_KEY must be a strong, unique value with at least 50 "
+        "characters in production."
+    )
+
+allowed_hosts_value = os.environ.get("DJANGO_ALLOWED_HOSTS", "")
+ALLOWED_HOSTS = [
+    host.strip() for host in allowed_hosts_value.split(",") if host.strip()
+]
+if not ALLOWED_HOSTS:
+    if DEBUG:
+        ALLOWED_HOSTS = ["localhost", "127.0.0.1", "[::1]"]
+    else:
+        raise ImproperlyConfigured(
+            "DJANGO_ALLOWED_HOSTS must be set when DJANGO_DEBUG is false."
+        )
+
+SECURE_SSL_REDIRECT = env_flag("DJANGO_SECURE_SSL_REDIRECT", not DEBUG)
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+SECURE_HSTS_SECONDS = int(
+    os.environ.get(
+        "DJANGO_SECURE_HSTS_SECONDS", str(31_536_000 if not DEBUG else 0)
+    )
+)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = env_flag(
+    "DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS", False
+)
+SECURE_HSTS_PRELOAD = env_flag("DJANGO_SECURE_HSTS_PRELOAD", False)
 
 
 # Application definition
