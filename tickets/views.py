@@ -1,7 +1,11 @@
 from django.shortcuts import render
 from .models import *
 from django.http.response import JsonResponse
-from rest_framework.decorators import api_view
+from rest_framework.decorators import (
+    api_view,
+    authentication_classes,
+    permission_classes,
+)
 from .serializers import *
 from rest_framework.response import Response 
 from rest_framework import status,filters
@@ -14,6 +18,9 @@ from rest_framework.permissions import IsAuthenticated
 
 # 1 without REST and no model query FBV
 
+@api_view(['GET'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
 def no_rest_no_model(request):
     guests=[
         {
@@ -32,6 +39,9 @@ def no_rest_no_model(request):
     
 # 2  without rest ffrom model data default django
 
+@api_view(['GET'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
 def no_rest_from_model(request):
     data = Guset.objects.all()
     return JsonResponse({'guests':list(data.values('name','mobile'))}) #JSON التي يمكن تحويلها إلى  (Dictionaries) لتحويل البيانات مباشرةً إلى قائمة من القواميس  .values() بسهولةاستخدمنا 

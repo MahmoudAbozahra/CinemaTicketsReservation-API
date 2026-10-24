@@ -4,7 +4,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+from django.contrib.auth import get_user_model
 from django.test import SimpleTestCase
+from rest_framework.test import APITestCase
+
+from .models import Guset
 
 
 class SettingsTests(SimpleTestCase):
@@ -98,3 +102,35 @@ print(json.dumps({
         self.assertEqual(settings_values["hsts_seconds"], 31_536_000)
         self.assertIs(settings_values["hsts_include_subdomains"], True)
         self.assertIs(settings_values["hsts_preload"], True)
+
+
+class GuestDataEndpointSecurityTests(APITestCase):
+    guest_endpoints = (
+        "/django/jsonresponsenomodel/",
+        "/django/jsonresponsefrommodel/",
+    )
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="endpoint-test-user",
+            password="test-password",
+        )
+        Guset.objects.create(name="Test Guest", mobile="00000000000")
+
+    def test_guest_data_endpoints_reject_anonymous_requests(self):
+        for endpoint in self.guest_endpoints:
+            with self.subTest(endpoint=endpoint):
+                response = self.client.get(endpoint)
+
+                self.assertEqual(response.status_code, 401)
+
+    def test_authenticated_user_can_access_guest_data_endpoints(self):
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Token {self.user.auth_token.key}"
+        )
+
+        for endpoint in self.guest_endpoints:
+            with self.subTest(endpoint=endpoint):
+                response = self.client.get(endpoint)
+
+                self.assertEqual(response.status_code, 200)
