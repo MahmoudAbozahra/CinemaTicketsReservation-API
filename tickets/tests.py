@@ -135,9 +135,7 @@ class GuestDataEndpointSecurityTests(APITestCase):
                 self.assertEqual(response.status_code, 401)
 
     def test_authenticated_user_can_access_guest_data_endpoints(self):
-        self.client.credentials(
-            HTTP_AUTHORIZATION=f"Token {self.user.auth_token.key}"
-        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.user.auth_token.key}")
 
         for endpoint in self.guest_endpoints:
             with self.subTest(endpoint=endpoint):
@@ -182,9 +180,7 @@ class DomainPermissionTests(APITestCase):
         )
 
     def authenticate(self, user):
-        self.client.credentials(
-            HTTP_AUTHORIZATION=f"Token {user.auth_token.key}"
-        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {user.auth_token.key}")
 
     def test_anonymous_users_cannot_access_domain_data(self):
         endpoints = (
@@ -221,9 +217,7 @@ class DomainPermissionTests(APITestCase):
             self.client.get(f"/rest/viewsets/movie/{self.movie.pk}/").status_code,
             200,
         )
-        self.assertEqual(
-            self.client.post("/rest/viewsets/movie/", {}).status_code, 403
-        )
+        self.assertEqual(self.client.post("/rest/viewsets/movie/", {}).status_code, 403)
         self.assertEqual(
             self.client.patch(
                 f"/rest/viewsets/movie/{self.movie.pk}/", {"hall": "B1"}
@@ -247,8 +241,12 @@ class DomainPermissionTests(APITestCase):
 
     def test_staff_users_can_read_domain_data_and_manage_movies(self):
         self.authenticate(self.staff_user)
-        self.assertEqual(self.client.get(self.guest_list_endpoints[-1]).status_code, 200)
-        self.assertEqual(self.client.get("/rest/viewsets/reservations/").status_code, 200)
+        self.assertEqual(
+            self.client.get(self.guest_list_endpoints[-1]).status_code, 200
+        )
+        self.assertEqual(
+            self.client.get("/rest/viewsets/reservations/").status_code, 200
+        )
         response = self.client.post(
             "/rest/viewsets/movie/",
             {"hall": "B1", "movie": "Staff Movie", "date": "2030-02-01"},
@@ -296,9 +294,7 @@ class SerializerSafetyTests(APITestCase):
 
     def test_reservation_serializer_rejects_missing_and_invalid_relations(self):
         missing = ReservationSerializer(data={})
-        invalid = ReservationSerializer(
-            data={"guest": 999999, "movie": self.movie.pk}
-        )
+        invalid = ReservationSerializer(data={"guest": 999999, "movie": self.movie.pk})
 
         self.assertFalse(missing.is_valid())
         self.assertEqual(set(missing.errors), {"guest", "movie"})
@@ -380,9 +376,7 @@ class ReservationWorkflowTests(APITestCase):
         )
 
         self.assertEqual(missing.status_code, 400)
-        self.assertEqual(
-            set(missing.data), {"name", "mobile", "hall", "movie"}
-        )
+        self.assertEqual(set(missing.data), {"name", "mobile", "hall", "movie"})
         self.assertEqual(nonexistent_movie.status_code, 400)
         self.assertIn("movie", nonexistent_movie.data)
         self.assertEqual(Guset.objects.count(), 1)
@@ -416,10 +410,13 @@ class ReservationWorkflowTests(APITestCase):
         )
         self.assertTrue(serializer.is_valid(), serializer.errors)
 
-        with patch(
-            "tickets.serializers.Reservation.objects.create",
-            side_effect=IntegrityError("simulated reservation failure"),
-        ), self.assertRaises(IntegrityError):
+        with (
+            patch(
+                "tickets.serializers.Reservation.objects.create",
+                side_effect=IntegrityError("simulated reservation failure"),
+            ),
+            self.assertRaises(IntegrityError),
+        ):
             serializer.save()
 
         self.assertEqual(Guset.objects.count(), 1)
@@ -458,19 +455,13 @@ class ApiQualityTests(APITestCase):
         )
 
     def authenticate(self, user):
-        self.client.credentials(
-            HTTP_AUTHORIZATION=f"Token {user.auth_token.key}"
-        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {user.auth_token.key}")
 
     def test_movie_search_filter_returns_matching_and_empty_results(self):
         self.authenticate(self.regular_user)
 
-        matching = self.client.get(
-            "/rest/viewsets/movie/", {"search": "Example Film"}
-        )
-        missing = self.client.get(
-            "/rest/viewsets/movie/", {"search": "No Such Title"}
-        )
+        matching = self.client.get("/rest/viewsets/movie/", {"search": "Example Film"})
+        missing = self.client.get("/rest/viewsets/movie/", {"search": "No Such Title"})
 
         self.assertEqual(matching.status_code, 200)
         self.assertEqual([item["id"] for item in matching.data], [self.movie.pk])
@@ -483,9 +474,7 @@ class ApiQualityTests(APITestCase):
         matching = self.client.get(
             "/fbv/findmovie/", {"hall": "A1", "movie": "The Example Film"}
         )
-        empty = self.client.get(
-            "/fbv/findmovie/", {"hall": "B1", "movie": "Unknown"}
-        )
+        empty = self.client.get("/fbv/findmovie/", {"hall": "B1", "movie": "Unknown"})
         invalid = self.client.get("/fbv/findmovie/", {"hall": "A1"})
 
         self.assertEqual(matching.status_code, 200)
@@ -505,9 +494,7 @@ class ApiQualityTests(APITestCase):
         guest_id = created.data["pk"]
         detail = f"/rest/CBV_pk/{guest_id}"
         retrieved = self.client.get(detail)
-        updated = self.client.put(
-            detail, {"name": "Updated Guest", "mobile": "456"}
-        )
+        updated = self.client.put(detail, {"name": "Updated Guest", "mobile": "456"})
         invalid = self.client.post("/rest/mixins_list/", {"name": "Missing Mobile"})
         deleted = self.client.delete(f"/rest/generics/{guest_id}")
 
@@ -530,8 +517,7 @@ class ApiQualityTests(APITestCase):
         relation_queries = [
             query["sql"]
             for query in queries.captured_queries
-            if "tickets_guset" in query["sql"]
-            or "tickets_reservation" in query["sql"]
+            if "tickets_guset" in query["sql"] or "tickets_reservation" in query["sql"]
         ]
         self.assertEqual(len(relation_queries), 2, relation_queries)
 

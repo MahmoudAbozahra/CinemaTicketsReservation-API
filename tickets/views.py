@@ -19,7 +19,7 @@ from .serializers import (
 )
 
 
-@api_view(['GET'])
+@api_view(["GET"])
 @authentication_classes([TokenAuthentication])
 @permission_classes([IsAdminUser])
 def no_rest_no_model(request):
@@ -36,15 +36,20 @@ def no_rest_no_model(request):
         },
     ]
     return JsonResponse(guests, safe=False)
-    
+
+
 # 2  without rest ffrom model data default django
 
-@api_view(['GET'])
+
+@api_view(["GET"])
 @authentication_classes([TokenAuthentication])
 @permission_classes([IsAdminUser])
 def no_rest_from_model(request):
     data = Guset.objects.all()
-    return JsonResponse({'guests':list(data.values('name','mobile'))}) #JSON التي يمكن تحويلها إلى  (Dictionaries) لتحويل البيانات مباشرةً إلى قائمة من القواميس  .values() بسهولةاستخدمنا 
+    return JsonResponse(
+        {"guests": list(data.values("name", "mobile"))}
+    )  # JSON التي يمكن تحويلها إلى  (Dictionaries) لتحويل البيانات مباشرةً إلى قائمة من القواميس  .values() بسهولةاستخدمنا
+
 
 class GuestListView(generics.ListCreateAPIView):
     queryset = Guset.objects.prefetch_related("reservation")
@@ -56,12 +61,14 @@ class GuestDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Guset.objects.prefetch_related("reservation")
     serializer_class = GuestSerializer
     permission_classes = [IsAdminUser]
-    
+
+
 class GuestViewSet(viewsets.ModelViewSet):
     queryset = Guset.objects.prefetch_related("reservation")
     serializer_class = GuestSerializer
     permission_classes = [IsAdminUser]
-    
+
+
 class MovieViewSet(viewsets.ModelViewSet):
     queryset = Movie.objects.all()
     serializer_class = MovieSerializer
@@ -70,22 +77,19 @@ class MovieViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         permission_class = (
-            IsAuthenticated
-            if self.action in {"list", "retrieve"}
-            else IsAdminUser
+            IsAuthenticated if self.action in {"list", "retrieve"} else IsAdminUser
         )
         return [permission_class()]
-    
-    
+
+
 class ReservationViewSet(viewsets.ModelViewSet):
     queryset = Reservation.objects.select_related("guest", "movie")
     serializer_class = ReservationSerializer
     permission_classes = [IsAdminUser]
-    
-    
-    
-#8 find movie
-@api_view(['GET'])
+
+
+# 8 find movie
+@api_view(["GET"])
 def find_movie(request):
     search = MovieSearchSerializer(data=request.query_params)
     search.is_valid(raise_exception=True)
@@ -96,8 +100,8 @@ def find_movie(request):
     return Response(MovieSerializer(movies, many=True).data)
 
 
-#9 create reservation 
-@api_view(['POST'])
+# 9 create reservation
+@api_view(["POST"])
 @permission_classes([IsAdminUser])
 def new_reservation(request):
     serializer = NewReservationSerializer(data=request.data)
