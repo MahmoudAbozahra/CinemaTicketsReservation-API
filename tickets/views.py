@@ -13,14 +13,14 @@ from rest_framework.views import APIView
 from django.http import Http404
 from rest_framework import mixins,generics,viewsets
 from rest_framework.authentication import BasicAuthentication,TokenAuthentication
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAdminUser, IsAuthenticated
 
 
 # 1 without REST and no model query FBV
 
 @api_view(['GET'])
 @authentication_classes([TokenAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAdminUser])
 def no_rest_no_model(request):
     guests=[
         {
@@ -41,7 +41,7 @@ def no_rest_no_model(request):
 
 @api_view(['GET'])
 @authentication_classes([TokenAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAdminUser])
 def no_rest_from_model(request):
     data = Guset.objects.all()
     return JsonResponse({'guests':list(data.values('name','mobile'))}) #JSON التي يمكن تحويلها إلى  (Dictionaries) لتحويل البيانات مباشرةً إلى قائمة من القواميس  .values() بسهولةاستخدمنا 
@@ -49,6 +49,7 @@ def no_rest_from_model(request):
 #3 Function based views 
 #3.1 GET  POST 
 @api_view(['GET','POST']) 
+@permission_classes([IsAdminUser])
 def FBV_list(request):
     
     #GET
@@ -68,6 +69,7 @@ def FBV_list(request):
 
 #3.2 GET  PUT  DELETE
 @api_view(['GET','PUT','DELETE']) 
+@permission_classes([IsAdminUser])
 def FBV_pk(request,pk):
     try:
         guest = Guset.objects.get(pk=pk)
@@ -94,6 +96,8 @@ def FBV_pk(request,pk):
     
 #4.1 cbv class based view GET  POST
 class CBV_list(APIView):
+    permission_classes = [IsAdminUser]
+
     def get(self , request):
         guests=Guset.objects.all()
         serializer=Guestserializer(guests,many=True)
@@ -108,6 +112,7 @@ class CBV_list(APIView):
     
 #4.2  GET PUT DELETE  clas based view CBV 
 class CBV_pk(APIView):
+    permission_classes = [IsAdminUser]
     
     def get_object(self,pk):
         try:
@@ -139,6 +144,7 @@ class CBV_pk(APIView):
 class Mixins_list(mixins.ListModelMixin,mixins.CreateModelMixin,generics.GenericAPIView):
     queryset=Guset.objects.all()  
     serializer_class=Guestserializer
+    permission_classes = [IsAdminUser]
     
     def get(self,request):
         return self.list(request)
@@ -150,6 +156,7 @@ class Mixins_list(mixins.ListModelMixin,mixins.CreateModelMixin,generics.Generic
 class Mixins_pk(mixins.RetrieveModelMixin,mixins.UpdateModelMixin,mixins.DestroyModelMixin,generics.GenericAPIView):
     queryset=Guset.objects.all()  
     serializer_class=Guestserializer
+    permission_classes = [IsAdminUser]
     
     def get(self,request,pk):
         return self.retrieve(request)
@@ -163,7 +170,7 @@ class Generics_list(generics.ListCreateAPIView):
     queryset=Guset.objects.all()
     serializer_class=Guestserializer
     authentication_classes=[TokenAuthentication]
-    permission_classes=[IsAuthenticated]
+    permission_classes=[IsAdminUser]
 
 
 #6.2 generics  GIT,PUT,DELETE
@@ -171,12 +178,13 @@ class Generics_pk(generics.RetrieveUpdateDestroyAPIView):
     queryset=Guset.objects.all()
     serializer_class=Guestserializer
     authentication_classes=[TokenAuthentication]
-    permission_classes=[IsAuthenticated]
+    permission_classes=[IsAdminUser]
     
 #7 viewsets 
 class viewsets_guest(viewsets.ModelViewSet):
     queryset=Guset.objects.all()
     serializer_class=Guestserializer
+    permission_classes = [IsAdminUser]
     
 #-----------------------------------------------------complete
 
@@ -185,11 +193,19 @@ class viewsets_movie(viewsets.ModelViewSet):
     serializer_class=Movieserializer
     filter_backends = [filters.SearchFilter]
     search_fileds=['movie']
+
+    def get_permissions(self):
+        if self.action in {"list", "retrieve"}:
+            permission_classes = [IsAuthenticated]
+        else:
+            permission_classes = [IsAdminUser]
+        return [permission() for permission in permission_classes]
     
     
 class viewsets_reservation(viewsets.ModelViewSet):
     queryset=Reservation.objects.all()
     serializer_class=Reservationserializer
+    permission_classes = [IsAdminUser]
     
     
     
@@ -206,6 +222,7 @@ def find_movie(request):
 
 #9 create reservation 
 @api_view(['POST'])
+@permission_classes([IsAdminUser])
 def new_reservation(request):
     movie=Movie.objects.get(
         hall=request.data['hall'],

@@ -8,7 +8,7 @@ from django.contrib.auth import get_user_model
 from django.test import SimpleTestCase
 from rest_framework.test import APITestCase
 
-from .models import Guset
+from .models import Guset, Movie, Reservation
 
 
 class SettingsTests(SimpleTestCase):
@@ -134,3 +134,113 @@ class GuestDataEndpointSecurityTests(APITestCase):
                 response = self.client.get(endpoint)
 
                 self.assertEqual(response.status_code, 200)
+
+
+class DomainPermissionTests(APITestCase):
+    guest_list_endpoints = (
+        "/rest/fbv_list/",
+        "/rest/cbv_list/",
+        "/rest/mixins_list/",
+        "/rest/generics/",
+        "/rest/viewsets/guests/",
+    )
+    guest_detail_endpoints = (
+        "/rest/fbv_pk/1",
+        "/rest/CBV_pk/1",
+        "/rest/mixins_pk/1",
+        "/rest/generics/1",
+        "/rest/viewsets/guests/1/",
+    )
+
+    def setUp(self):
+        user_model = get_user_model()
+        self.regular_user = user_model.objects.create_user(
+            username="regular-user",
+            password="test-password",
+        )
+        self.staff_user = user_model.objects.create_user(
+            username="staff-user",
+            password="test-password",
+            is_staff=True,
+        )
+        self.guest = Guset.objects.create(name="Test Guest", mobile="00000000000")
+        self.movie = Movie.objects.create(
+            hall="A1", movie="Test Movie", date="2030-01-01"
+        )
+        self.reservation = Reservation.objects.create(
+            guest=self.guest, movie=self.movie
+        )
+
+    def authenticate(self, user):
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Token {user.auth_token.key}"
+        )
+
+    def test_anonymous_users_cannot_access_domain_data(self):
+        endpoints = (
+            *self.guest_list_endpoints,
+            "/rest/viewsets/movie/",
+            "/rest/viewsets/reservations/",
+            "/fbv/findmovie/",
+            "/fbv/new_reservation",
+        )
+        for endpoint in endpoints:
+            with self.subTest(endpoint=endpoint):
+                self.assertEqual(self.client.get(endpoint).status_code, 401)
+
+    def test_regular_users_cannot_manage_guests(self):
+        self.authenticate(self.regular_user)
+        for endpoint in self.guest_list_endpoints:
+            with self.subTest(endpoint=endpoint, method="GET"):
+                self.assertEqual(self.client.get(endpoint).status_code, 403)
+            with self.subTest(endpoint=endpoint, method="POST"):
+                self.assertEqual(self.client.post(endpoint, {}).status_code, 403)
+
+        for endpoint in self.guest_detail_endpoints:
+            with self.subTest(endpoint=endpoint, method="GET"):
+                self.assertEqual(self.client.get(endpoint).status_code, 403)
+            for method in ("put", "patch", "delete"):
+                with self.subTest(endpoint=endpoint, method=method):
+                    response = getattr(self.client, method)(endpoint, {})
+                    self.assertEqual(response.status_code, 403)
+
+    def test_regular_users_can_read_movies_but_cannot_change_them(self):
+        self.authenticate(self.regular_user)
+        self.assertEqual(self.client.get("/rest/viewsets/movie/").status_code, 200)
+        self.assertEqual(
+            self.client.get(f"/rest/viewsets/movie/{self.movie.pk}/").status_code,
+            200,
+        )
+        self.assertEqual(
+            self.client.post("/rest/viewsets/movie/", {}).status_code, 403
+        )
+        self.assertEqual(
+            self.client.patch(
+                f"/rest/viewsets/movie/{self.movie.pk}/", {"hall": "B1"}
+            ).status_code,
+            403,
+        )
+        self.assertEqual(
+            self.client.delete(f"/rest/viewsets/movie/{self.movie.pk}/").status_code,
+            403,
+        )
+
+    def test_regular_users_cannot_access_or_change_reservations(self):
+        self.authenticate(self.regular_user)
+        endpoint = "/rest/viewsets/reservations/"
+        detail = f"{endpoint}{self.reservation.pk}/"
+        self.assertEqual(self.client.get(endpoint).status_code, 403)
+        self.assertEqual(self.client.post(endpoint, {}).status_code, 403)
+        self.assertEqual(self.client.get(detail).status_code, 403)
+        self.assertEqual(self.client.patch(detail, {}).status_code, 403)
+        self.assertEqual(self.client.delete(detail).status_code, 403)
+
+    def test_staff_users_can_read_domain_data_and_manage_movies(self):
+        self.authenticate(self.staff_user)
+        self.assertEqual(self.client.get(self.guest_list_endpoints[-1]).status_code, 200)
+        self.assertEqual(self.client.get("/rest/viewsets/reservations/").status_code, 200)
+        response = self.client.post(
+            "/rest/viewsets/movie/",
+            {"hall": "B1", "movie": "Staff Movie", "date": "2030-02-01"},
+        )
+        self.assertEqual(response.status_code, 201, response.data)
