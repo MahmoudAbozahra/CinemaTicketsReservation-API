@@ -1,6 +1,5 @@
 from django.contrib import admin
-from .models import *
-# Register your models here.
-admin.site.register(Movie)
-admin.site.register(Guset)
-admin.site.register(Reservation)
+
+from .models import Guset, Movie, Reservation
+
+admin.site.register((Movie, Guset, Reservation))
