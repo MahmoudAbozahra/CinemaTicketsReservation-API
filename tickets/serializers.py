@@ -8,19 +8,19 @@ from .models import Guset, Movie, Reservation
 
 
 
-class Movieserializer(serializers.ModelSerializer):
+class MovieSerializer(serializers.ModelSerializer):
     class Meta:
         model = Movie
         fields = ("id", "hall", "movie", "date")
         
         
-class Reservationserializer(serializers.ModelSerializer):
+class ReservationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Reservation
         fields = ("id", "guest", "movie")
         
         
-class Guestserializer(serializers.ModelSerializer):
+class GuestSerializer(serializers.ModelSerializer):
     reservation = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
 
     class Meta:

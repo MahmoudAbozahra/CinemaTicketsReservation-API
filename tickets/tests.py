@@ -13,10 +13,10 @@ from rest_framework.test import APITestCase
 
 from .models import Guset, Movie, Reservation
 from .serializers import (
-    Guestserializer,
-    Movieserializer,
+    GuestSerializer,
+    MovieSerializer,
     NewReservationSerializer,
-    Reservationserializer,
+    ReservationSerializer,
 )
 
 
@@ -270,24 +270,24 @@ class SerializerSafetyTests(APITestCase):
         )
 
     def test_guest_serializer_requires_name_and_mobile(self):
-        serializer = Guestserializer(data={})
+        serializer = GuestSerializer(data={})
 
         self.assertFalse(serializer.is_valid())
         self.assertEqual(set(serializer.errors), {"name", "mobile"})
 
     def test_guest_reverse_reservations_are_read_only(self):
         reservation = Reservation.objects.create(guest=self.guest, movie=self.movie)
-        serializer = Guestserializer(
+        serializer = GuestSerializer(
             data={"name": "New Guest", "mobile": "111", "reservation": [reservation.pk]}
         )
 
         self.assertTrue(serializer.is_valid(), serializer.errors)
         guest = serializer.save()
         self.assertEqual(list(guest.reservation.values_list("pk", flat=True)), [])
-        self.assertEqual(Guestserializer(guest).data["reservation"], [])
+        self.assertEqual(GuestSerializer(guest).data["reservation"], [])
 
     def test_movie_serializer_rejects_invalid_date(self):
-        serializer = Movieserializer(
+        serializer = MovieSerializer(
             data={"hall": "A1", "movie": "Test Movie", "date": "not-a-date"}
         )
 
@@ -295,8 +295,8 @@ class SerializerSafetyTests(APITestCase):
         self.assertIn("date", serializer.errors)
 
     def test_reservation_serializer_rejects_missing_and_invalid_relations(self):
-        missing = Reservationserializer(data={})
-        invalid = Reservationserializer(
+        missing = ReservationSerializer(data={})
+        invalid = ReservationSerializer(
             data={"guest": 999999, "movie": self.movie.pk}
         )
 
