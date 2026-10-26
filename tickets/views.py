@@ -6,7 +6,12 @@ from rest_framework.decorators import (
     authentication_classes,
     permission_classes,
 )
-from .serializers import *
+from .serializers import (
+    Guestserializer,
+    Movieserializer,
+    NewReservationSerializer,
+    Reservationserializer,
+)
 from rest_framework.response import Response 
 from rest_framework import status,filters
 from rest_framework.views import APIView
@@ -224,21 +229,10 @@ def find_movie(request):
 @api_view(['POST'])
 @permission_classes([IsAdminUser])
 def new_reservation(request):
-    movie=Movie.objects.get(
-        hall=request.data['hall'],
-        movie=request.data['movie'],
+    serializer = NewReservationSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    reservation = serializer.save()
+    return Response(
+        Reservationserializer(reservation).data,
+        status=status.HTTP_201_CREATED,
     )
-    
-    guest=Guset()
-    guest.name=request.data['name']
-    guest.mobile=request.data['mobile']
-    guest.save()
-    
-    
-    
-    reservation=Reservation()
-    reservation.guest=guest
-    reservation.movie=movie
-    reservation.save()
-    
-    return Response(request.data , status=status.HTTP_201_CREATED)

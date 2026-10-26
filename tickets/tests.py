@@ -3,13 +3,20 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.db import IntegrityError
 from django.test import SimpleTestCase
 from rest_framework.test import APITestCase
 
 from .models import Guset, Movie, Reservation
-from .serializers import Guestserializer, Movieserializer, Reservationserializer
+from .serializers import (
+    Guestserializer,
+    Movieserializer,
+    NewReservationSerializer,
+    Reservationserializer,
+)
 
 
 class SettingsTests(SimpleTestCase):
@@ -321,3 +328,117 @@ class SerializerSafetyTests(APITestCase):
         self.assertEqual(guest_response.status_code, 403)
         self.assertEqual(movie_response.status_code, 403)
         self.assertEqual(reservation_response.status_code, 403)
+
+
+class ReservationWorkflowTests(APITestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.staff_user = user_model.objects.create_user(
+            username="reservation-staff-user",
+            password="test-password",
+            is_staff=True,
+        )
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Token {self.staff_user.auth_token.key}"
+        )
+        self.guest = Guset.objects.create(name="Test Guest", mobile="00000000000")
+        self.movie = Movie.objects.create(
+            hall="A1", movie="Test Movie", date="2030-01-01"
+        )
+        self.reservation = Reservation.objects.create(
+            guest=self.guest, movie=self.movie
+        )
+
+    def test_reservation_creation_returns_created_resource(self):
+        response = self.client.post(
+            "/fbv/new_reservation",
+            {
+                "name": "New Guest",
+                "mobile": "11111111111",
+                "hall": "A1",
+                "movie": "Test Movie",
+            },
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(set(response.data), {"id", "guest", "movie"})
+        self.assertEqual(Guset.objects.count(), 2)
+        self.assertEqual(Reservation.objects.count(), 2)
+
+    def test_reservation_creation_validates_required_and_related_fields(self):
+        missing = self.client.post("/fbv/new_reservation", {})
+        nonexistent_movie = self.client.post(
+            "/fbv/new_reservation",
+            {
+                "name": "New Guest",
+                "mobile": "111",
+                "hall": "missing",
+                "movie": "missing",
+            },
+        )
+
+        self.assertEqual(missing.status_code, 400)
+        self.assertEqual(
+            set(missing.data), {"name", "mobile", "hall", "movie"}
+        )
+        self.assertEqual(nonexistent_movie.status_code, 400)
+        self.assertIn("movie", nonexistent_movie.data)
+        self.assertEqual(Guset.objects.count(), 1)
+
+    def test_ambiguous_movie_lookup_is_rejected_without_writes(self):
+        Movie.objects.create(hall="A1", movie="Test Movie", date="2030-02-01")
+
+        response = self.client.post(
+            "/fbv/new_reservation",
+            {
+                "name": "New Guest",
+                "mobile": "111",
+                "hall": "A1",
+                "movie": "Test Movie",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("movie", response.data)
+        self.assertEqual(Guset.objects.count(), 1)
+        self.assertEqual(Reservation.objects.count(), 1)
+
+    def test_reservation_creation_rolls_back_guest_on_write_failure(self):
+        serializer = NewReservationSerializer(
+            data={
+                "name": "New Guest",
+                "mobile": "111",
+                "hall": "A1",
+                "movie": "Test Movie",
+            }
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
+        with patch(
+            "tickets.serializers.Reservation.objects.create",
+            side_effect=IntegrityError("simulated reservation failure"),
+        ), self.assertRaises(IntegrityError):
+            serializer.save()
+
+        self.assertEqual(Guset.objects.count(), 1)
+        self.assertEqual(Reservation.objects.count(), 1)
+
+    def test_staff_can_update_and_delete_reservations(self):
+        alternate_movie = Movie.objects.create(
+            hall="B1", movie="Alternate Movie", date="2030-03-01"
+        )
+        endpoint = f"/rest/viewsets/reservations/{self.reservation.pk}/"
+
+        update = self.client.patch(endpoint, {"movie": alternate_movie.pk})
+        self.assertEqual(update.status_code, 200, update.data)
+        self.reservation.refresh_from_db()
+        self.assertEqual(self.reservation.movie_id, alternate_movie.pk)
+
+        delete = self.client.delete(endpoint)
+        self.assertEqual(delete.status_code, 204)
+        self.assertFalse(Reservation.objects.filter(pk=self.reservation.pk).exists())
+
+    def test_guest_deletion_cascades_to_reservation(self):
+        self.guest.delete()
+
+        self.assertFalse(Reservation.objects.filter(pk=self.reservation.pk).exists())
