@@ -1,8 +1,8 @@
-from django.urls import path,include
-from . import views
-from rest_framework.routers import DefaultRouter
+from django.urls import include, path
 from rest_framework.authtoken.views import obtain_auth_token
+from rest_framework.routers import DefaultRouter
 
+from . import views
 
 router=DefaultRouter()
 router.register('guests',views.viewsets_guest)
@@ -19,24 +19,24 @@ urlpatterns = [
     
     path('django/jsonresponsefrommodel/',views.no_rest_from_model),
     
-    #3.1 GET , POST from rest frame-work function based view @api_view
-    path('rest/fbv_list/',views.FBV_list),
+    # Legacy route aliases use the same generic guest views.
+    path('rest/fbv_list/',views.Generics_list.as_view()),
     
     #3.2 GET PUT DELETE from rest frame-work function based view @api_view
-    path('rest/fbv_pk/<int:pk>',views.FBV_pk),
+    path('rest/fbv_pk/<int:pk>',views.Generics_pk.as_view()),
     
     
     #4.1 GET , POST from rest frame-work class based view CBV_list APIview
-    path('rest/cbv_list/',views.CBV_list.as_view()),
+    path('rest/cbv_list/',views.Generics_list.as_view()),
     
     #4.2 GET PUT DELETE from rest frame-work class based view CBV_pk APIview
-    path('rest/CBV_pk/<int:pk>',views.CBV_pk.as_view()),
+    path('rest/CBV_pk/<int:pk>',views.Generics_pk.as_view()),
     
     #5.1 mixins  GIT,POST
-    path('rest/mixins_list/',views.Mixins_list.as_view()),
+    path('rest/mixins_list/',views.Generics_list.as_view()),
     
     #5.2 mixins GIT,PUT,DELETE
-    path('rest/mixins_pk/<int:pk>',views.Mixins_pk.as_view()),
+    path('rest/mixins_pk/<int:pk>',views.Generics_pk.as_view()),
     
     
      #6.1  generics  GIT,POST

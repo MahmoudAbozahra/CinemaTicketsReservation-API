@@ -6,8 +6,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
-from django.db import IntegrityError
+from django.db import IntegrityError, connection
 from django.test import SimpleTestCase
+from django.test.utils import CaptureQueriesContext
 from rest_framework.test import APITestCase
 
 from .models import Guset, Movie, Reservation
@@ -122,6 +123,7 @@ class GuestDataEndpointSecurityTests(APITestCase):
         self.user = get_user_model().objects.create_user(
             username="endpoint-test-user",
             password="test-password",
+            is_staff=True,
         )
         Guset.objects.create(name="Test Guest", mobile="00000000000")
 
@@ -438,7 +440,104 @@ class ReservationWorkflowTests(APITestCase):
         self.assertEqual(delete.status_code, 204)
         self.assertFalse(Reservation.objects.filter(pk=self.reservation.pk).exists())
 
-    def test_guest_deletion_cascades_to_reservation(self):
-        self.guest.delete()
 
-        self.assertFalse(Reservation.objects.filter(pk=self.reservation.pk).exists())
+class ApiQualityTests(APITestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.staff_user = user_model.objects.create_user(
+            username="api-quality-staff",
+            password="test-password",
+            is_staff=True,
+        )
+        self.regular_user = user_model.objects.create_user(
+            username="api-quality-regular",
+            password="test-password",
+        )
+        self.movie = Movie.objects.create(
+            hall="A1", movie="The Example Film", date="2030-01-01"
+        )
+
+    def authenticate(self, user):
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Token {user.auth_token.key}"
+        )
+
+    def test_movie_search_filter_returns_matching_and_empty_results(self):
+        self.authenticate(self.regular_user)
+
+        matching = self.client.get(
+            "/rest/viewsets/movie/", {"search": "Example Film"}
+        )
+        missing = self.client.get(
+            "/rest/viewsets/movie/", {"search": "No Such Title"}
+        )
+
+        self.assertEqual(matching.status_code, 200)
+        self.assertEqual([item["id"] for item in matching.data], [self.movie.pk])
+        self.assertEqual(missing.status_code, 200)
+        self.assertEqual(missing.data, [])
+
+    def test_find_movie_uses_validated_query_parameters(self):
+        self.authenticate(self.regular_user)
+
+        matching = self.client.get(
+            "/fbv/findmovie/", {"hall": "A1", "movie": "The Example Film"}
+        )
+        empty = self.client.get(
+            "/fbv/findmovie/", {"hall": "B1", "movie": "Unknown"}
+        )
+        invalid = self.client.get("/fbv/findmovie/", {"hall": "A1"})
+
+        self.assertEqual(matching.status_code, 200)
+        self.assertEqual(len(matching.data), 1)
+        self.assertEqual(empty.status_code, 200)
+        self.assertEqual(empty.data, [])
+        self.assertEqual(invalid.status_code, 400)
+        self.assertIn("movie", invalid.data)
+
+    def test_legacy_guest_route_aliases_share_generic_crud_status_codes(self):
+        self.authenticate(self.staff_user)
+
+        created = self.client.post(
+            "/rest/fbv_list/", {"name": "Created Guest", "mobile": "123"}
+        )
+        self.assertEqual(created.status_code, 201, created.data)
+        guest_id = created.data["pk"]
+        detail = f"/rest/CBV_pk/{guest_id}"
+        retrieved = self.client.get(detail)
+        updated = self.client.put(
+            detail, {"name": "Updated Guest", "mobile": "456"}
+        )
+        invalid = self.client.post("/rest/mixins_list/", {"name": "Missing Mobile"})
+        deleted = self.client.delete(f"/rest/generics/{guest_id}")
+
+        self.assertEqual(retrieved.status_code, 200)
+        self.assertEqual(updated.status_code, 200)
+        self.assertEqual(invalid.status_code, 400)
+        self.assertIn("mobile", invalid.data)
+        self.assertEqual(deleted.status_code, 204)
+
+    def test_guest_list_prefetches_reverse_reservations(self):
+        guest = Guset.objects.create(name="First Guest", mobile="111")
+        Reservation.objects.create(guest=guest, movie=self.movie)
+        Guset.objects.create(name="Second Guest", mobile="222")
+        self.authenticate(self.staff_user)
+
+        with CaptureQueriesContext(connection) as queries:
+            response = self.client.get("/rest/viewsets/guests/")
+
+        self.assertEqual(response.status_code, 200)
+        relation_queries = [
+            query["sql"]
+            for query in queries.captured_queries
+            if "tickets_guset" in query["sql"]
+            or "tickets_reservation" in query["sql"]
+        ]
+        self.assertEqual(len(relation_queries), 2, relation_queries)
+
+    def test_guest_deletion_cascades_to_reservation(self):
+        guest = Guset.objects.create(name="Delete Guest", mobile="333")
+        reservation = Reservation.objects.create(guest=guest, movie=self.movie)
+        guest.delete()
+
+        self.assertFalse(Reservation.objects.filter(pk=reservation.pk).exists())

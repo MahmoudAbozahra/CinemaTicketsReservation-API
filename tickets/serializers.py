@@ -61,3 +61,8 @@ class NewReservationSerializer(serializers.Serializer):
         with transaction.atomic():
             guest = Guset.objects.create(**validated_data)
             return Reservation.objects.create(guest=guest, movie=movie)
+
+
+class MovieSearchSerializer(serializers.Serializer):
+    hall = serializers.CharField(max_length=10)
+    movie = serializers.CharField(max_length=100)

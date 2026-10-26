@@ -8,6 +8,7 @@ from rest_framework.decorators import (
 )
 from .serializers import (
     Guestserializer,
+    MovieSearchSerializer,
     Movieserializer,
     NewReservationSerializer,
     Reservationserializer,
@@ -172,7 +173,7 @@ class Mixins_pk(mixins.RetrieveModelMixin,mixins.UpdateModelMixin,mixins.Destroy
 
 #6.1 generics  GIT,POST
 class Generics_list(generics.ListCreateAPIView):
-    queryset=Guset.objects.all()
+    queryset = Guset.objects.prefetch_related("reservation")
     serializer_class=Guestserializer
     authentication_classes=[TokenAuthentication]
     permission_classes=[IsAdminUser]
@@ -180,24 +181,24 @@ class Generics_list(generics.ListCreateAPIView):
 
 #6.2 generics  GIT,PUT,DELETE
 class Generics_pk(generics.RetrieveUpdateDestroyAPIView):
-    queryset=Guset.objects.all()
+    queryset = Guset.objects.prefetch_related("reservation")
     serializer_class=Guestserializer
     authentication_classes=[TokenAuthentication]
     permission_classes=[IsAdminUser]
     
 #7 viewsets 
 class viewsets_guest(viewsets.ModelViewSet):
-    queryset=Guset.objects.all()
+    queryset = Guset.objects.prefetch_related("reservation")
     serializer_class=Guestserializer
     permission_classes = [IsAdminUser]
     
 #-----------------------------------------------------complete
 
 class viewsets_movie(viewsets.ModelViewSet):
-    queryset=Movie.objects.all()
+    queryset = Movie.objects.all()
     serializer_class=Movieserializer
     filter_backends = [filters.SearchFilter]
-    search_fileds=['movie']
+    search_fields = ["movie"]
 
     def get_permissions(self):
         if self.action in {"list", "retrieve"}:
@@ -208,7 +209,7 @@ class viewsets_movie(viewsets.ModelViewSet):
     
     
 class viewsets_reservation(viewsets.ModelViewSet):
-    queryset=Reservation.objects.all()
+    queryset = Reservation.objects.select_related("guest", "movie")
     serializer_class=Reservationserializer
     permission_classes = [IsAdminUser]
     
@@ -217,12 +218,13 @@ class viewsets_reservation(viewsets.ModelViewSet):
 #8 find movie
 @api_view(['GET'])
 def find_movie(request):
-    movies=Movie.objects.filter(
-        hall=request.data['hall'],
-        movie=request.data['movie'],
+    search = MovieSearchSerializer(data=request.query_params)
+    search.is_valid(raise_exception=True)
+    movies = Movie.objects.filter(
+        hall=search.validated_data["hall"],
+        movie=search.validated_data["movie"],
     )
-    serializer=Movieserializer(movies,many=True)
-    return Response(serializer.data)
+    return Response(Movieserializer(movies, many=True).data)
 
 
 #9 create reservation 
