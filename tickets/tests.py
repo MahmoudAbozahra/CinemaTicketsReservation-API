@@ -9,6 +9,7 @@ from django.test import SimpleTestCase
 from rest_framework.test import APITestCase
 
 from .models import Guset, Movie, Reservation
+from .serializers import Guestserializer, Movieserializer, Reservationserializer
 
 
 class SettingsTests(SimpleTestCase):
@@ -244,3 +245,79 @@ class DomainPermissionTests(APITestCase):
             {"hall": "B1", "movie": "Staff Movie", "date": "2030-02-01"},
         )
         self.assertEqual(response.status_code, 201, response.data)
+
+
+class SerializerSafetyTests(APITestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.staff_user = user_model.objects.create_user(
+            username="serializer-staff-user",
+            password="test-password",
+            is_staff=True,
+        )
+        self.guest = Guset.objects.create(name="Test Guest", mobile="00000000000")
+        self.movie = Movie.objects.create(
+            hall="A1", movie="Test Movie", date="2030-01-01"
+        )
+
+    def test_guest_serializer_requires_name_and_mobile(self):
+        serializer = Guestserializer(data={})
+
+        self.assertFalse(serializer.is_valid())
+        self.assertEqual(set(serializer.errors), {"name", "mobile"})
+
+    def test_guest_reverse_reservations_are_read_only(self):
+        reservation = Reservation.objects.create(guest=self.guest, movie=self.movie)
+        serializer = Guestserializer(
+            data={"name": "New Guest", "mobile": "111", "reservation": [reservation.pk]}
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        guest = serializer.save()
+        self.assertEqual(list(guest.reservation.values_list("pk", flat=True)), [])
+        self.assertEqual(Guestserializer(guest).data["reservation"], [])
+
+    def test_movie_serializer_rejects_invalid_date(self):
+        serializer = Movieserializer(
+            data={"hall": "A1", "movie": "Test Movie", "date": "not-a-date"}
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("date", serializer.errors)
+
+    def test_reservation_serializer_rejects_missing_and_invalid_relations(self):
+        missing = Reservationserializer(data={})
+        invalid = Reservationserializer(
+            data={"guest": 999999, "movie": self.movie.pk}
+        )
+
+        self.assertFalse(missing.is_valid())
+        self.assertEqual(set(missing.errors), {"guest", "movie"})
+        self.assertFalse(invalid.is_valid())
+        self.assertIn("guest", invalid.errors)
+
+    def test_regular_user_cannot_use_model_serializers_for_writes(self):
+        user_model = get_user_model()
+        regular_user = user_model.objects.create_user(
+            username="serializer-regular-user",
+            password="test-password",
+        )
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Token {regular_user.auth_token.key}"
+        )
+
+        guest_response = self.client.post(
+            "/rest/viewsets/guests/", {"name": "Attempt", "mobile": "123"}
+        )
+        movie_response = self.client.post(
+            "/rest/viewsets/movie/",
+            {"hall": "B1", "movie": "Attempt", "date": "2030-02-01"},
+        )
+        reservation_response = self.client.post(
+            "/rest/viewsets/reservations/",
+            {"guest": self.guest.pk, "movie": self.movie.pk},
+        )
+
+        self.assertEqual(guest_response.status_code, 403)
+        self.assertEqual(movie_response.status_code, 403)
+        self.assertEqual(reservation_response.status_code, 403)
